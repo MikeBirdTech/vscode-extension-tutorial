@@ -1,71 +1,180 @@
-# tutorial README
+# Extension Tutorial README
 
-This is the README for your extension "tutorial". After writing up a brief description, we recommend including the following sections.
+## Setting it up
 
-## Features
+There are three things you need to have installed
 
-Describe specific features of your extension including screenshots of your extension in action. Image paths are relative to this README file.
+- [Node.js](https://nodejs.org/en/)
+- [yeoman](https://yeoman.io/)
+- [vs code extension generator](https://github.com/Microsoft/vscode-generator-code)
 
-For example if there is an image subfolder under your extension project workspace:
+`npm install -g yo generator-code`
 
-\!\[feature X\]\(images/feature-x.png\)
+### Generate extension
 
-> Tip: Many popular extensions utilize animations. This is an excellent way to show off your extension! We recommend short, focused animations that are easy to follow.
+Run `yo code` and configure some values to get the project scaffolded.
 
-## Requirements
+To test, run the extension with `f5`, in the new window, open the command pallete and run hello world. Super easy.
 
-If you have any requirements or dependencies, add a section describing those and how to install and configure them.
+### Configuration
 
-## Extension Settings
+The [official documentation](https://code.visualstudio.com/api) has a lot of information but I’ll cover some important nodes.
 
-Include if your extension adds any VS Code settings through the `contributes.configuration` extension point.
+- Commands
+    - Assign a title and other UI elements to a command. The title is used in the Command Pallete for example
+- Activation Events
+    - When a command is invoked, VS Code will emit an activationEvent and the extension becomes activated
+    - Can be when VS Code loads and is ready to go `onStartupFinished`
+    - Can be when a given command is called `onCommand:<namespace>.<function>`
+    - You must define `onCommand` for any commands that:
+        - Can be invoked using the Command Palette
+        - Can be invoked using a keybinding
+        - Can be invoked through the VS Code UI, such as through the editor title bar
+        - Is intended as an API for other extensions to consume
+- Configuration
+    - Provides the user with editable parameters
+    - Displayed under `Preferences` > `Settings`
+    - Settings are shown alphabetically but can be grouped with another level of namespace
+    - Value can be string, number, boolean
+    - Can add a markdown description to include links
+    - Can set min/max values
+    - Can set defaults
 
-For example:
+```jsx
+    "configuration": {
+      "title": "Tutorial",
+      "properties": {
+        "tutorial.string": {
+          "type": "string",
+          "default": null,
+          "markdownDescription": "The [string](https://www.web.site) example of settings"
+        },
+        "tutorial.number": {
+          "type": "number",
+          "default": 0.7,
+          "minimum": 0,
+          "maximum": 1,
+          "markdownDescription": "The [number](https://www.web.site) example of settings"
+}
+```
 
-This extension contributes the following settings:
+>Commands, activation events, and configuration are namespaced.
 
-* `myExtension.enable`: Enable/disable this extension.
-* `myExtension.thing`: Set to `blah` to do something.
+- Keybindings
+    - Can associate a command with a keybinding
+    - `key` for Windows and `mac` for Apple
+    - Can set scope of when keybinding applies (ex. editorTextFocus)
+    - User always has the ability to change/override keybindings
 
-## Known Issues
+```jsx
+"keybindings": [
+      {
+        "command": "tutorial.helloWorld",
+        "key": "alt+h",
+        "mac": "option+h",
+        "when": "editorTextFocus"
+      }
+]
+```
 
-Calling out known issues can help limit users opening duplicate issues against your extension.
+- Metadata
+    - Data displayed on Marketplace page
+        - publisher, name, description
+        - links (repo, bugs, homepage)
+        - icon/banner colour
+        - categories/keywords
 
-## Release Notes
 
-Users appreciate release notes as you update your extension.
+### Logic
 
-### 1.0.0
+The `activate` function is what is called by the activation event. It returns a ‘disposable’ object, which allows for safe cleanup. You’ll typically find these for event listeners, timers, and commands.
 
-Initial release of ...
+At the end of the `activate` function, you need to make sure that each command is registered with
+`context.subscriptions.push(disposable);`
 
-### 1.0.1
+If you don’t include this line of code for each command, the omitted command will still be registered and will still be available for the user to execute. However, if the extension is deactivated or uninstalled, the command will not be cleaned up properly, which could potentially lead to memory leaks or other issues. Just like a hike in the woods, be sure to clean up after yourself
 
-Fixed issue #.
+Inside the `activate` function, you will register the commands that you defined in `package.json`. 
 
-### 1.1.0
+```jsx
+let disposable = vscode.commands.registerCommand('tutorial.helloWorld', () => {
+		vscode.window.showInformationMessage('Hello World from extension-tutorial!');
+	});
+```
 
-Added features X, Y, and Z.
+The default command is very basic, it just displays an information message.
+
+The `vscode` object is very powerful
+
+- can interact with the editor environment, tests, commands, other extensions
+
+The `vscode.window` object is featured in this tutorial and has a lot of capabilities for you to take advantage of such as
+
+- interactive with terminals, colour theme, or notebook
+- show input boxes, status bar items, or error messages
+
+To selected highlighted code:
+
+- Get the editor with `const editor = vscode.window.activeTextEditor;`
+- Get the selected text - `const selectedText = editor.document.getText(editor.selection);`
+
+Now that we can capture text from the user, here’s how you integrate with OpenAI
+
+### OpenAI
+
+run `npm install openai`
+
+Import into your file with `import { Configuration, OpenAIApi } from "openai";`
+
+Configure your API Key
+
+```jsx
+const configuration = new Configuration({
+				apiKey: OPENAI_API_KEY,
+			});
+```
+
+    ⚠️Big important security note!⚠️
+
+    I have seen too many extensions that store API Keys in settings. This is completely insecure. All extensions have access to all settings, so if you store it there (which is in plain text) any malicious extension can take your key. What you need to do is store the key in `Secret Storage` which is scoped to each individual extension.
+
+    `await context.secrets.store(OPENAI_API_KEY, secret);`
+
+    - where OPENAI_API_KEY is the key and `secret` is your API Key from OpenAI
+
+To pass the configuration object into a new instance of OpenAIApi
+
+```jsx
+const openai = new OpenAIApi(configuration);
+```
+
+To create a completion by making a request to OpenAI
+
+```jsx
+	const response = await openai.createCompletion({
+				model: "text-davinci-003",
+				prompt: `${prompt}`,
+				max_tokens: 250,
+				temperature: 0.4,
+			});
+```
+
+`model` - the OpenAI model you want to use
+
+`prompt` - the text you want to send to GPT-3  for a response. You can send the selected text directly, or you can build a stronger prompt by adding context/direction before or after the user’s text
+
+`max_tokens` - the maxmimum number of tokens for the prompt + request. Higher value = possible for longer responses but more expensive. Remember prompts count too, so a more detailed prompt uses more tokens
+
+`temperature` - the sampling temperature - higher values = more risk
 
 ---
 
-## Following extension guidelines
 
-Ensure that you've read through the extensions guidelines and follow the best practices for creating your extension.
+When you get your response, you can capture the output with
+`const output = response.data.choices[0].text`
 
-* [Extension Guidelines](https://code.visualstudio.com/api/references/extension-guidelines)
+- choices is an array because you can set a `n` variable to return more than one completion for a given promp. But default `n` is 1
 
-## Working with Markdown
+And that’s it. It really is that easy. You can now have a user highlight code, hit a keybinding to run a command, have that command take the highlighted code and insert it into a prompt for GPT-3, then get a response that you can present to the user. 
 
-You can author your README using Visual Studio Code. Here are some useful editor keyboard shortcuts:
-
-* Split the editor (`Cmd+\` on macOS or `Ctrl+\` on Windows and Linux).
-* Toggle preview (`Shift+Cmd+V` on macOS or `Shift+Ctrl+V` on Windows and Linux).
-* Press `Ctrl+Space` (Windows, Linux, macOS) to see a list of Markdown snippets.
-
-## For more information
-
-* [Visual Studio Code's Markdown Support](http://code.visualstudio.com/docs/languages/markdown)
-* [Markdown Syntax Reference](https://help.github.com/articles/markdown-basics/)
-
-**Enjoy!**
+It's an amazing feeling to see someone using a tool that I've built and knowing that it is helping them in some way. It could be something as small as saving them a few minutes of time each day or as significant as changing the way they work for the better. With VS Code extensions, knowing the potential impact is 10s of millions of developers is so exciting
